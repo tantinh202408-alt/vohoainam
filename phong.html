@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Đang chuyển hướng...</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+        body {
+            background-color: #0d0f14;
+            color: #ffffff;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 24px;
+            text-align: center;
+        }
+        .container {
+            max-width: 420px;
+            width: 100%;
+            background: #171b24;
+            padding: 36px 28px;
+            border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .spinner {
+            width: 52px;
+            height: 52px;
+            border: 4px solid rgba(254, 44, 85, 0.2);
+            border-top: 4px solid #fe2c55;
+            border-radius: 50%;
+            animation: spin 0.9s cubic-bezier(0.68, -0.55, 0.27, 1.55) infinite;
+            margin: 0 auto 24px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        h2 {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 10px;
+            letter-spacing: -0.3px;
+        }
+        p {
+            font-size: 14px;
+            color: #8a94a6;
+            line-height: 1.5;
+            margin-bottom: 24px;
+        }
+        .btn-group {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .btn {
+            display: inline-block;
+            width: 100%;
+            padding: 14px 20px;
+            border-radius: 12px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 15px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: none;
+        }
+        .btn-tiktok {
+            background: linear-gradient(135deg, #fe2c55 0%, #ff0050 100%);
+            color: #ffffff;
+            box-shadow: 0 4px 15px rgba(254, 44, 85, 0.35);
+        }
+        .btn-tiktok:active {
+            transform: scale(0.98);
+        }
+        .btn-web {
+            background: rgba(255, 255, 255, 0.07);
+            color: #d1d5db;
+        }
+        .btn-web:hover {
+            background: rgba(255, 255, 255, 0.12);
+        }
+        .status-badge {
+            display: inline-block;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 12px;
+            color: #9ca3af;
+            margin-bottom: 20px;
+        }
+        .error-msg {
+            color: #ef4444;
+            font-size: 14px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="spinner" id="loadingSpinner"></div>
+        <div class="status-badge" id="statusBadge">TikTok Live Direct</div>
+        <h2 id="titleText">Đang mở phòng livestream...</h2>
+        <p id="descText">Trình duyệt đang tự động mở ứng dụng TikTok. Nếu không thấy phản hồi, vui lòng nhấn nút bên dưới.</p>
+
+        <div class="btn-group" id="btnGroup" style="display: none;">
+            <a href="#" class="btn btn-tiktok" id="btnOpenApp">Mở ứng dụng TikTok</a>
+            <a href="#" class="btn btn-web" id="btnOpenWeb">Mở trên Trình duyệt Web</a>
+        </div>
+        <div class="error-msg" id="errorMsg">Mã phòng không hợp lệ hoặc đã hết hạn.</div>
+    </div>
+
+    <script>
+        // Thuật toán giải mã token thành room_id
+        function decodeToken(token) {
+            try {
+                if (!token) return null;
+                // Chuẩn hóa token nếu có dính param
+                token = token.replace(/^[?#=]/, "").split("&")[0].split("=").pop().trim();
+                if (token.endsWith("=")) token = token.slice(0, -1);
+
+                // Nếu truyền trực tiếp room_id dạng số nguyên dài
+                if (/^\d{15,22}$/.test(token)) {
+                    return token;
+                }
+
+                const base62 = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+                let o = 0x0n;
+                for (let i = 0; i < token.length; i++) {
+                    const idx = base62.indexOf(token[i]);
+                    if (idx === -1) return null;
+                    o = 0x3en * o + BigInt(idx);
+                }
+
+                o -= 944245n;
+                const res = o.toString().slice(1).split("").reverse().join("");
+                const firstChar = res[0];
+                const n = res.slice(1);
+                const numE = Number(firstChar);
+
+                if (isNaN(numE) || numE < 0 || numE >= n.length) return null;
+                const roomId = n.slice(0, n.length - numE);
+                return roomId;
+            } catch (err) {
+                console.error(err);
+                return null;
+            }
+        }
+
+        (function init() {
+            // Lấy chuỗi mã từ URL: hỗ trợ ?m=..., ?..., #..., =...
+            let rawQuery = window.location.search || window.location.hash;
+            if (!rawQuery && window.location.href.includes("=")) {
+                rawQuery = window.location.href.split("=").pop();
+            }
+
+            const urlParams = new URLSearchParams(window.location.search);
+            let token = urlParams.get("m") || urlParams.get("id") || urlParams.get("token");
+
+            if (!token && rawQuery) {
+                token = rawQuery.replace(/^[?#=]/, "").split("&")[0];
+            }
+
+            const roomId = decodeToken(token);
+
+            const spinner = document.getElementById("loadingSpinner");
+            const btnGroup = document.getElementById("btnGroup");
+            const btnOpenApp = document.getElementById("btnOpenApp");
+            const btnOpenWeb = document.getElementById("btnOpenWeb");
+            const titleText = document.getElementById("titleText");
+            const descText = document.getElementById("descText");
+            const errorMsg = document.getElementById("errorMsg");
+
+            if (!roomId) {
+                spinner.style.display = "none";
+                titleText.innerText = "Liên kết không hợp lệ";
+                descText.style.display = "none";
+                errorMsg.style.display = "block";
+                return;
+            }
+
+            const deeplinkApp = `snssdk1180://live?room_id=${roomId}`;
+            const webLink = `https://webcast.tiktok.com/webcast/room/live/?room_id=${roomId}`;
+
+            btnOpenApp.href = deeplinkApp;
+            btnOpenWeb.href = webLink;
+
+            // 1. Thử gọi Deeplink mở App ngay lập tức
+            window.location.href = deeplinkApp;
+
+            // 2. Sau 1.2s hiện nút bấm thủ công dự phòng nếu app chưa mở
+            setTimeout(() => {
+                spinner.style.display = "none";
+                btnGroup.style.display = "flex";
+                titleText.innerText = "Phòng Live: " + roomId;
+            }, 1200);
+        })();
+    </script>
+</body>
+</html>
